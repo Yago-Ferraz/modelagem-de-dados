@@ -35,3 +35,10 @@ rebuild:
 	$(DC) down
 	$(DC) build --no-cache
 	$(DC) up -d
+
+shell:
+	docker exec -it filmes_db mysql -u root -p
+
+apagar:
+	$(DC) down
+	docker volume rm modelagem-de-dados_filmes_data
