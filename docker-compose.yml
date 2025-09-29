@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: filmes_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: filmes
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user123
+    ports:
+      - "33016:3306"
+    volumes:
+      - filmes_data:/var/lib/mysql
+
+volumes:
+  filmes_data:
