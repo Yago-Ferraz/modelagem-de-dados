@@ -43,11 +43,6 @@ CREATE TABLE Paises (
     nome_pais VARCHAR(150) NOT NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE Locais (
-    id_local INT AUTO_INCREMENT PRIMARY KEY,
-    nome_local VARCHAR(255) NOT NULL
-) ENGINE=InnoDB;
-
 CREATE TABLE Empresas (
     id_empresa INT AUTO_INCREMENT PRIMARY KEY,
     nome_empresa VARCHAR(255) NOT NULL
@@ -104,14 +99,6 @@ CREATE TABLE Filme_Pais_Origem (
     PRIMARY KEY (id_filme, id_pais),
     FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
     FOREIGN KEY (id_pais) REFERENCES Paises(id_pais) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE Filme_Local_Filmagem (
-    id_filme INT,
-    id_local INT,
-    PRIMARY KEY (id_filme, id_local),
-    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-    FOREIGN KEY (id_local) REFERENCES Locais(id_local) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE Filme_Empresa_Producao (
