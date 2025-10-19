@@ -1,289 +1,352 @@
 import pandas as pd
-from sqlalchemy import create_engine, text
-from urllib.parse import quote_plus
+import pymysql
+import re
+import os
 
-# ================================
-# 1. Carregar e filtrar o CSV
-# ================================
+class FilmesNormalizer:
+    def __init__(self, host='localhost', user='root', password='', database='filmes'):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.database = database
+        self.connection = None
+        self.cursor = None
 
-df = pd.read_csv(r"base de dados nao normalizada\world_imdb_movies_top_movies_per_year.csv[1]", encoding='utf-8')
+    # ----------------------------
+    # Conexão com o banco
+    # ----------------------------
+    def conectar_banco(self, criar_db=False):
+        try:
+            # ⚠️ ALERTA: porta padrão do MySQL é 3306, use 33016 apenas se configurado assim
+            print("[INFO] Conectando ao banco...")
+            self.connection = pymysql.connect(
+                host=self.host,
+                user=self.user,
+                password=self.password,
+                charset='utf8mb4',
+                port=33016,
+                autocommit=False
+            )
+            self.cursor = self.connection.cursor()
+            if criar_db:
+                self.cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
+                print(f"[INFO] Banco '{self.database}' criado ou já existia.")
+            self.cursor.execute(f"USE {self.database}")
+            print(f"[INFO] Usando banco '{self.database}'")
+            return True
+        except Exception as e:
+            print(f"[ERRO] Erro ao conectar/criar banco: {e}")
+            return False
 
-# Filtrar filmes após 2000 e em inglês
-df = df[
-    (df['year'] >= 2000) &
-    (df['language'].str.contains('English', case=False, na=False))
-]
+    def desconectar_banco(self):
+        if self.connection:
+            self.cursor.close()
+            self.connection.close()
+            print("[INFO] Conexão com o banco encerrada.")
 
-print(f"{len(df)} filmes filtrados.")
+    # ----------------------------
+    # Criação das tabelas
+    # ----------------------------
+    def criar_tabelas(self):
+        try:
+            print("[INFO] Criando tabelas...")
+            sqls = [
+                # Tabela principal
+                """
+                CREATE TABLE IF NOT EXISTS Filmes (
+                    id_filme INT AUTO_INCREMENT PRIMARY KEY,
+                    titulo VARCHAR(255) NOT NULL,
+                    link_imdb VARCHAR(500),
+                    ano_lancamento INT,
+                    duracao_minutos INT,
+                    classificacao_mpa VARCHAR(20),
+                    nota_imdb DECIMAL(3,1),
+                    votos_imdb INT,
+                    orcamento DECIMAL(15,2),
+                    bilheteria_mundial DECIMAL(15,2),
+                    bilheteria_eua_canada DECIMAL(15,2),
+                    bilheteria_abertura DECIMAL(15,2),
+                    vitorias_premios INT,
+                    nominacoes_premios INT,
+                    vitorias_oscar INT
+                ) ENGINE=InnoDB;
+                """,
+                # Tabelas de dimensão
+                """
+                CREATE TABLE IF NOT EXISTS Pessoas (
+                    id_pessoa INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_pessoa VARCHAR(255) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Generos (
+                    id_genero INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_genero VARCHAR(100) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Paises (
+                    id_pais INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_pais VARCHAR(150) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Locais (
+                    id_local INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_local VARCHAR(255) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Empresas (
+                    id_empresa INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_empresa VARCHAR(255) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Idiomas (
+                    id_idioma INT AUTO_INCREMENT PRIMARY KEY,
+                    nome_idioma VARCHAR(150) NOT NULL
+                ) ENGINE=InnoDB;
+                """,
+                # Tabelas associativas
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Estrela (
+                    id_filme INT,
+                    id_pessoa INT,
+                    ordem_credito INT DEFAULT NULL,
+                    PRIMARY KEY (id_filme, id_pessoa),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Diretor (
+                    id_filme INT,
+                    id_pessoa INT,
+                    PRIMARY KEY (id_filme, id_pessoa),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Roteirista (
+                    id_filme INT,
+                    id_pessoa INT,
+                    PRIMARY KEY (id_filme, id_pessoa),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Genero (
+                    id_filme INT,
+                    id_genero INT,
+                    PRIMARY KEY (id_filme, id_genero),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_genero) REFERENCES Generos(id_genero) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Pais_Origem (
+                    id_filme INT,
+                    id_pais INT,
+                    PRIMARY KEY (id_filme, id_pais),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_pais) REFERENCES Paises(id_pais) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Local_Filmagem (
+                    id_filme INT,
+                    id_local INT,
+                    PRIMARY KEY (id_filme, id_local),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_local) REFERENCES Locais(id_local) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Empresa_Producao (
+                    id_filme INT,
+                    id_empresa INT,
+                    PRIMARY KEY (id_filme, id_empresa),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_empresa) REFERENCES Empresas(id_empresa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Filme_Idioma (
+                    id_filme INT,
+                    id_idioma INT,
+                    PRIMARY KEY (id_filme, id_idioma),
+                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
+                    FOREIGN KEY (id_idioma) REFERENCES Idiomas(id_idioma) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """
+            ]
+            for sql in sqls:
+                self.cursor.execute(sql)
+            self.connection.commit()
+            print("[INFO] Tabelas criadas com sucesso.")
+        except Exception as e:
+            print(f"[ERRO] Erro ao criar tabelas: {e}")
+            self.connection.rollback()
 
-# ================================
-# 2. Normalização
-# ================================
+    # ----------------------------
+    # Inserção de dados
+    # ----------------------------
+    def inserir_ou_obter_id(self, tabela, campo_nome, valor, campo_id):
+        if not valor or pd.isna(valor) or str(valor).strip() == '':
+            return None
+        valor = str(valor).strip()
+        self.cursor.execute(f"SELECT {campo_id} FROM {tabela} WHERE {campo_nome} = %s", (valor,))
+        resultado = self.cursor.fetchone()
+        if resultado:
+            return resultado[0]
+        self.cursor.execute(f"INSERT INTO {tabela} ({campo_nome}) VALUES (%s)", (valor,))
+        return self.cursor.lastrowid
 
-# Tabela principal: Filmes
-filmes = df.drop(columns=['director','writer','star','genre','language']).copy()
+    def processar_lista_valores(self, valores_str, separador=','):
+        if not valores_str or pd.isna(valores_str):
+            return []
+        return [v.strip() for v in str(valores_str).split(separador) if v.strip()]
 
-# Diretores
-movie_director = (
-    df[['id','director']]
-    .assign(director=df['director'].str.split(',\s*'))
-    .explode('director')
-    .dropna()
-)
+    def limpar_duracao(self, duracao_str):
+        if not duracao_str or pd.isna(duracao_str):
+            return None
+        total_minutos = 0
+        horas_match = re.search(r'(\d+)h', str(duracao_str))
+        if horas_match:
+            total_minutos += int(horas_match.group(1)) * 60
+        minutos_match = re.search(r'(\d+)m', str(duracao_str))
+        if minutos_match:
+            total_minutos += int(minutos_match.group(1))
+        return total_minutos if total_minutos > 0 else None
 
-# Roteiristas
-movie_writer = (
-    df[['id','writer']]
-    .assign(writer=df['writer'].str.split(',\s*'))
-    .explode('writer')
-    .dropna()
-)
+    def limpar_valor_numerico(self, valor):
+        if pd.isna(valor) or valor == '' or valor is None:
+            return None
+        try:
+            return float(valor)
+        except (ValueError, TypeError):
+            print(f"[ALERTA] Valor numérico inválido: {valor}")
+            return None
 
-# Estrelas / Atores
-movie_star = (
-    df[['id','star']]
-    .assign(star=df['star'].str.split(',\s*'))
-    .explode('star')
-    .dropna()
-)
+    def processar_filme(self, row, numero_linha=None):
+        try:
+            titulo = None if pd.isna(row.get('title')) else row.get('title')
+            if numero_linha:
+                print(f"[INFO] Processando filme #{numero_linha}: {titulo}")
+            query_filme = """
+                INSERT INTO Filmes (
+                    titulo, link_imdb, ano_lancamento, duracao_minutos, 
+                    classificacao_mpa, nota_imdb, votos_imdb, orcamento,
+                    bilheteria_mundial, bilheteria_eua_canada, bilheteria_abertura,
+                    vitorias_premios, nominacoes_premios, vitorias_oscar
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            valores = (
+                titulo,
+                None if pd.isna(row.get('link')) else row.get('link'),
+                int(row['year']) if pd.notna(row.get('year')) else None,
+                self.limpar_duracao(row.get('duration')),
+                None if pd.isna(row.get('rating_mpa')) else row.get('rating_mpa'),
+                self.limpar_valor_numerico(row.get('rating_imdb')),
+                self.limpar_valor_numerico(row.get('vote')),
+                self.limpar_valor_numerico(row.get('budget')),
+                self.limpar_valor_numerico(row.get('gross_world_wide')),
+                self.limpar_valor_numerico(row.get('gross_us_canada')),
+                self.limpar_valor_numerico(row.get('gross_opening_weekend')),
+                self.limpar_valor_numerico(row.get('win')),
+                self.limpar_valor_numerico(row.get('nomination')),
+                self.limpar_valor_numerico(row.get('oscar'))
+            )
+            self.cursor.execute(query_filme, valores)
+            id_filme = self.cursor.lastrowid
 
-# Gêneros
-movie_genre = (
-    df[['id','genre']]
-    .assign(genre=df['genre'].str.split(',\s*'))
-    .explode('genre')
-    .dropna()
-)
+            dim_id_map = {
+                'Generos': 'id_genero',
+                'Paises': 'id_pais',
+                'Locais': 'id_local',
+                'Empresas': 'id_empresa',
+                'Idiomas': 'id_idioma',
+                'Pessoas': 'id_pessoa'
+            }
 
-# Idiomas
-movie_language = (
-    df[['id','language']]
-    .assign(language=df['language'].str.split(',\s*'))
-    .explode('language')
-    .dropna()
-)
+            def inserir_associativa(tabela_assoc, tabela_dim, campo_nome, coluna_csv):
+                coluna_id = dim_id_map[tabela_dim]
+                for v in self.processar_lista_valores(row.get(coluna_csv,'')):
+                    id_dim = self.inserir_ou_obter_id(tabela_dim, campo_nome, v, coluna_id)
+                    if id_dim:
+                        self.cursor.execute(
+                            f"INSERT IGNORE INTO {tabela_assoc} (id_filme, {coluna_id}) VALUES (%s,%s)",
+                            (id_filme, id_dim)
+                        )
 
-# ================================
-# 3. Tabelas de Dimensão
-# ================================
+            # Associativas
+            for i, estrela in enumerate(self.processar_lista_valores(row.get('star',''))):
+                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', estrela, 'id_pessoa')
+                if id_pessoa:
+                    self.cursor.execute(
+                        "INSERT IGNORE INTO Filme_Estrela (id_filme,id_pessoa,ordem_credito) VALUES (%s,%s,%s)",
+                        (id_filme,id_pessoa,i+1)
+                    )
 
-# --- Pessoas (diretores, roteiristas, atores)
-pessoas = pd.concat([
-    movie_director[['director']].rename(columns={'director':'nome_pessoa'}),
-    movie_writer[['writer']].rename(columns={'writer':'nome_pessoa'}),
-    movie_star[['star']].rename(columns={'star':'nome_pessoa'})
-]).drop_duplicates().reset_index(drop=True)
-pessoas['id_pessoa'] = pessoas.index + 1
+            for diretor in self.processar_lista_valores(row.get('director','')):
+                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', diretor, 'id_pessoa')
+                if id_pessoa:
+                    self.cursor.execute(
+                        "INSERT IGNORE INTO Filme_Diretor (id_filme,id_pessoa) VALUES (%s,%s)",
+                        (id_filme,id_pessoa)
+                    )
 
-# --- Gêneros
-generos = movie_genre[['genre']].drop_duplicates().reset_index(drop=True)
-generos = generos.rename(columns={'genre':'nome_genero'})
-generos['id_genero'] = generos.index + 1
+            for roteirista in self.processar_lista_valores(row.get('writer','')):
+                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', roteirista, 'id_pessoa')
+                if id_pessoa:
+                    self.cursor.execute(
+                        "INSERT IGNORE INTO Filme_Roteirista (id_filme,id_pessoa) VALUES (%s,%s)",
+                        (id_filme,id_pessoa)
+                    )
 
-# --- Idiomas
-idiomas = movie_language[['language']].drop_duplicates().reset_index(drop=True)
-idiomas = idiomas.rename(columns={'language':'nome_idioma'})
-idiomas['id_idioma'] = idiomas.index + 1
+            inserir_associativa('Filme_Genero','Generos','nome_genero','genre')
+            inserir_associativa('Filme_Pais_Origem','Paises','nome_pais','country_origin')
+            inserir_associativa('Filme_Local_Filmagem','Locais','nome_local','filming_location')
+            inserir_associativa('Filme_Empresa_Producao','Empresas','nome_empresa','production_company')
+            inserir_associativa('Filme_Idioma','Idiomas','nome_idioma','language')
 
-# --- Países
-paises = filmes[['country_origin']].drop_duplicates().reset_index(drop=True)
-paises = paises.rename(columns={'country_origin':'nome_pais'})
-paises['id_pais'] = paises.index + 1
+            self.connection.commit()  # commit por filme
+            return True
+        except Exception as e:
+            print(f"[ERRO] Ao processar filme '{titulo}': {e}")
+            self.connection.rollback()
+            return False
 
-# --- Empresas
-empresas = filmes[['production_company']].drop_duplicates().reset_index(drop=True)
-empresas = empresas.rename(columns={'production_company':'nome_empresa'})
-empresas['id_empresa'] = empresas.index + 1
+    # ----------------------------
+    # Normalização CSV com logs e chunks
+    # ----------------------------
+    def normalizar_csv(self, arquivo_csv):
+        if not os.path.exists(arquivo_csv):
+            print(f"[ERRO] Arquivo não encontrado: {arquivo_csv}")
+            return
+        
+        print(f"[INFO] Iniciando leitura do CSV: {arquivo_csv}")
+        chunk_size = 100
+        total = 0
+        for chunk in pd.read_csv(arquivo_csv, chunksize=chunk_size):
+            print(f"[INFO] Processando linhas {total+1} até {total+len(chunk)}")
+            for idx, row in chunk.iterrows():
+                self.processar_filme(row, total+idx+1)
+            total += len(chunk)
+            print(f"[INFO] Total de filmes processados até agora: {total}")
+        print(f"[INFO] Normalização concluída! Total de filmes processados: {total}")
 
-# ================================
-# 4. Tabelas Associativas
-# ================================
-
-# Filme ↔ Diretor
-filme_diretor = movie_director.merge(pessoas, left_on='director', right_on='nome_pessoa')[['id','id_pessoa']]
-filme_diretor = filme_diretor.rename(columns={'id':'id_filme'})
-
-# Filme ↔ Roteirista
-filme_roteirista = movie_writer.merge(pessoas, left_on='writer', right_on='nome_pessoa')[['id','id_pessoa']]
-filme_roteirista = filme_roteirista.rename(columns={'id':'id_filme'})
-
-# Filme ↔ Estrela / Ator
-filme_estrela = movie_star.merge(pessoas, left_on='star', right_on='nome_pessoa')[['id','id_pessoa']]
-filme_estrela = filme_estrela.rename(columns={'id':'id_filme'})
-filme_estrela['ordem_credito'] = None  # coluna adicional conforme o SQL
-
-# Filme ↔ Gênero
-filme_genero = movie_genre.merge(generos, left_on='genre', right_on='nome_genero')[['id','id_genero']]
-filme_genero = filme_genero.rename(columns={'id':'id_filme'})
-
-# Filme ↔ Idioma
-filme_idioma = movie_language.merge(idiomas, left_on='language', right_on='nome_idioma')[['id','id_idioma']]
-filme_idioma = filme_idioma.rename(columns={'id':'id_filme'})
-
-# Filme ↔ País
-filme_pais = filmes.merge(paises, left_on='country_origin', right_on='nome_pais')[['id','id_pais']]
-filme_pais = filme_pais.rename(columns={'id':'id_filme'})
-
-# Filme ↔ Empresa
-filme_empresa = filmes.merge(empresas, left_on='production_company', right_on='nome_empresa')[['id','id_empresa']]
-filme_empresa = filme_empresa.rename(columns={'id':'id_filme'})
-
-# ================================
-# 5. Conexão MySQL
-# ================================
-
-user = "root"
-password = "root123"
-password_enc = quote_plus(password)
-host = "localhost"
-port = 33016
-database = "filmes"
-
-engine =  create_engine(f"mysql+pymysql://{user}:{password_enc}@{host}:{port}/")
-
-# ================================
-# 6. Criação das Tabelas no MySQL
-# ================================
-
-engine_root = create_engine(f"mysql+pymysql://{user}:{password_enc}@{host}:{port}/")
-
-with engine_root.begin() as conn:
-    conn.execute(text(f"DROP DATABASE IF EXISTS {database};"))
-    conn.execute(text(f"CREATE DATABASE {database} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"))
-
-with engine.begin() as conn:
-    
-    conn.execute(text("DROP DATABASE IF EXISTS filmes;"))
-    conn.execute(text("CREATE DATABASE filmes;"))
-    conn.execute(text("USE filmes;"))
-    
-    # 1. Filmes
-    conn.execute(text("""
-        CREATE TABLE Filmes (
-            id_filme INT AUTO_INCREMENT PRIMARY KEY,
-            titulo VARCHAR(255) NOT NULL,
-            link_imdb VARCHAR(500),
-            ano_lancamento INT,
-            duracao_minutos INT,
-            classificacao_mpa VARCHAR(20),
-            nota_imdb DECIMAL(3,1),
-            votos_imdb INT,
-            orcamento DECIMAL(15,2),
-            bilheteria_mundial DECIMAL(15,2),
-            bilheteria_eua_canada DECIMAL(15,2),
-            bilheteria_abertura DECIMAL(15,2),
-            vitorias_premios INT,
-            nominacoes_premios INT,
-            vitorias_oscar INT
-        ) ENGINE=InnoDB;
-    """))
-
-    # 2. Dimensões
-    conn.execute(text("""
-        CREATE TABLE Pessoas (
-            id_pessoa INT AUTO_INCREMENT PRIMARY KEY,
-            nome_pessoa VARCHAR(255) NOT NULL
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Generos (
-            id_genero INT AUTO_INCREMENT PRIMARY KEY,
-            nome_genero VARCHAR(100) NOT NULL
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Paises (
-            id_pais INT AUTO_INCREMENT PRIMARY KEY,
-            nome_pais VARCHAR(150) NOT NULL
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Empresas (
-            id_empresa INT AUTO_INCREMENT PRIMARY KEY,
-            nome_empresa VARCHAR(255) NOT NULL
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Idiomas (
-            id_idioma INT AUTO_INCREMENT PRIMARY KEY,
-            nome_idioma VARCHAR(150) NOT NULL
-        ) ENGINE=InnoDB;
-    """))
-
-    # 3. Associativas
-    conn.execute(text("""
-        CREATE TABLE Filme_Estrela (
-            id_filme INT,
-            id_pessoa INT,
-            ordem_credito INT DEFAULT NULL,
-            PRIMARY KEY (id_filme, id_pessoa),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Diretor (
-            id_filme INT,
-            id_pessoa INT,
-            PRIMARY KEY (id_filme, id_pessoa),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Roteirista (
-            id_filme INT,
-            id_pessoa INT,
-            PRIMARY KEY (id_filme, id_pessoa),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Genero (
-            id_filme INT,
-            id_genero INT,
-            PRIMARY KEY (id_filme, id_genero),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_genero) REFERENCES Generos(id_genero) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Pais_Origem (
-            id_filme INT,
-            id_pais INT,
-            PRIMARY KEY (id_filme, id_pais),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_pais) REFERENCES Paises(id_pais) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Empresa_Producao (
-            id_filme INT,
-            id_empresa INT,
-            PRIMARY KEY (id_filme, id_empresa),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_empresa) REFERENCES Empresas(id_empresa) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-    conn.execute(text("""
-        CREATE TABLE Filme_Idioma (
-            id_filme INT,
-            id_idioma INT,
-            PRIMARY KEY (id_filme, id_idioma),
-            FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-            FOREIGN KEY (id_idioma) REFERENCES Idiomas(id_idioma) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-    """))
-
-print("✅ Estrutura criada com sucesso e idêntica ao modelo SQL.")
+# ----------------------------
+# EXECUÇÃO
+# ----------------------------
+if __name__ == "__main__":
+    arquivo_csv = "filmes_ingles_apos_2000.csv"
+    normalizer = FilmesNormalizer(user='root', password='root123')
+    if normalizer.conectar_banco(criar_db=True):
+        normalizer.criar_tabelas()
+        normalizer.normalizar_csv(arquivo_csv)
+        normalizer.desconectar_banco()
+        print("[INFO] Banco criado e dados inseridos com sucesso!")
