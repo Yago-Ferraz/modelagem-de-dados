@@ -1,15 +1,16 @@
 VENV = venv
-PIP = $(VENV)\Scripts\pip.exe
-PYTHON = $(VENV)\Scripts\python.exe
+PIP = $(VENV)\bin\pip.exe
+PYTHON = $(VENV)\bin\python.exe
+ACTIVATE = $(VENV)\bin\Activate.ps1
 DC=docker-compose
 
 # Criar a venv
 criar_venv:
 	python -m venv $(VENV)
 
-# Ativar a venv (abre um terminal CMD já ativado)
+# Ativar a venv (abre um terminal PowerShell já ativado)
 ativar:
-	@cmd /k "$(VENV)\Scripts\activate.bat"
+	@if exist "$(ACTIVATE)" (powershell -Command "& '$(ACTIVATE)'") else (echo "Virtual environment not found. Run 'make criar_venv' first.")
 
 # Instalar pacotes do requirements.txt
 instalar:
@@ -22,9 +23,6 @@ atualizar_requirements:
 	@echo "Concluido!"
 
 # Listar pacotes instalados
-listar:
-	$(PIP) list
-
 listar:
 	$(PIP) list
 
