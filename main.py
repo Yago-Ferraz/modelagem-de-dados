@@ -17,7 +17,7 @@ class FilmesNormalizer:
     # ----------------------------
     def conectar_banco(self, criar_db=False):
         try:
-            # ⚠️ ALERTA: porta padrão do MySQL é 3306, use 33016 apenas se configurado assim
+            
             print("[INFO] Conectando ao banco...")
             self.connection = pymysql.connect(
                 host=self.host,
