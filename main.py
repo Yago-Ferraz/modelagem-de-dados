@@ -91,12 +91,6 @@ class FilmesNormalizer:
                 ) ENGINE=InnoDB;
                 """,
                 """
-                CREATE TABLE IF NOT EXISTS Locais (
-                    id_local INT AUTO_INCREMENT PRIMARY KEY,
-                    nome_local VARCHAR(255) NOT NULL
-                ) ENGINE=InnoDB;
-                """,
-                """
                 CREATE TABLE IF NOT EXISTS Empresas (
                     id_empresa INT AUTO_INCREMENT PRIMARY KEY,
                     nome_empresa VARCHAR(255) NOT NULL
@@ -153,15 +147,6 @@ class FilmesNormalizer:
                     PRIMARY KEY (id_filme, id_pais),
                     FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
                     FOREIGN KEY (id_pais) REFERENCES Paises(id_pais) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS Filme_Local_Filmagem (
-                    id_filme INT,
-                    id_local INT,
-                    PRIMARY KEY (id_filme, id_local),
-                    FOREIGN KEY (id_filme) REFERENCES Filmes(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_local) REFERENCES Locais(id_local) ON DELETE CASCADE
                 ) ENGINE=InnoDB;
                 """,
                 """
@@ -266,7 +251,6 @@ class FilmesNormalizer:
             dim_id_map = {
                 'Generos': 'id_genero',
                 'Paises': 'id_pais',
-                'Locais': 'id_local',
                 'Empresas': 'id_empresa',
                 'Idiomas': 'id_idioma',
                 'Pessoas': 'id_pessoa'
@@ -309,7 +293,6 @@ class FilmesNormalizer:
 
             inserir_associativa('Filme_Genero','Generos','nome_genero','genre')
             inserir_associativa('Filme_Pais_Origem','Paises','nome_pais','country_origin')
-            inserir_associativa('Filme_Local_Filmagem','Locais','nome_local','filming_location')
             inserir_associativa('Filme_Empresa_Producao','Empresas','nome_empresa','production_company')
             inserir_associativa('Filme_Idioma','Idiomas','nome_idioma','language')
 

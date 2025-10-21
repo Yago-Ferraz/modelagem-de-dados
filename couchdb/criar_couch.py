@@ -19,7 +19,7 @@ from typing import Dict, List, Optional
 # =====================
 COUCHDB_HOST = "http://localhost:5984"
 COUCHDB_USER = "admin"
-COUCHDB_PASSWORD = "mdrzz.0301"  # Altere para sua senha
+COUCHDB_PASSWORD = "admin123"  # Altere para sua senha
 DATABASE_NAME = "filmes_db"
 
 

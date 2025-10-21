@@ -1,7 +1,7 @@
 VENV = venv
 PIP = $(VENV)\Scripts\pip.exe
 PYTHON = $(VENV)\Scripts\python.exe
-ACTIVATE = $(VENV)\Scripts\Activate.ps1
+ACTIVATE = $(VENV)\Scripts\activate
 DC=docker-compose
 
 # Criar a venv

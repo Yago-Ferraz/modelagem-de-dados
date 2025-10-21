@@ -59,7 +59,7 @@ class SQLToCouchDBMigrator:
             if response.status_code == 401:
                 print("   ⚠️ CouchDB requer autenticação. Tentando com credenciais padrão...")
                 # Tentar com credenciais padrão
-                self.auth = ('root', 'mdrzz.0301')
+                self.auth = ('admin', 'admin123')
                 response = requests.put(self.base_url, auth=self.auth, timeout=10)
                 print(f"   Status HTTP (com auth): {response.status_code}")
             
@@ -811,10 +811,10 @@ def main():
     # Configurações MySQL (instância local - sem Docker)
     MYSQL_CONFIG = {
         'user': 'root',
-        'password': 'mdrzz.0301',
+        'password': 'root123',
         'host': 'localhost',
-        'port': 3306,  # Porta padrão MySQL (sem Docker)
-        'database': 'filmes_db'
+        'port': 33016,  # Porta padrão MySQL (sem Docker)
+        'database': 'filmes'
     }
     
     # Configurações CouchDB (instância local - sem Docker)
