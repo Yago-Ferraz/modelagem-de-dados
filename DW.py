@@ -28,8 +28,10 @@ class FilmesNormalizer:
             )
             self.cursor = self.connection.cursor()
             if criar_db:
-                self.cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
-                print(f"[INFO] Banco '{self.database}' criado ou já existia.")
+                self.cursor.execute(f"DROP DATABASE IF EXISTS {self.database}")
+                print(f"[INFO] Banco '{self.database}' antigo removido (se existia).")
+                self.cursor.execute(f"CREATE DATABASE {self.database}")
+                print(f"[INFO] Banco '{self.database}' criado.")
             self.cursor.execute(f"USE {self.database}")
             print(f"[INFO] Usando banco '{self.database}'")
             return True
@@ -51,52 +53,73 @@ class FilmesNormalizer:
             print("[INFO] Criando tabelas...")
             sqls = [
                 # ----------------------------------------------------
-                # 1. TABELAS DE DIMENSÃO SIMPLES (Mantidas)
+                # 1. TABELAS DE DIMENSÃO SIMPLES
                 # ----------------------------------------------------
                 """
-                CREATE TABLE IF NOT EXISTS Pessoas (
+                CREATE TABLE IF NOT EXISTS Dim_Pessoa (
                     id_pessoa INT AUTO_INCREMENT PRIMARY KEY,
                     nome_pessoa VARCHAR(255) NOT NULL
                 ) ENGINE=InnoDB;
                 """,
                 """
-                CREATE TABLE IF NOT EXISTS Generos (
+                CREATE TABLE IF NOT EXISTS Dim_Diretor (
+                    id_diretor INT AUTO_INCREMENT PRIMARY KEY,
+                    id_pessoa INT NOT NULL,
+                    FOREIGN KEY (id_pessoa) REFERENCES Dim_Pessoa(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Dim_Roteirista (
+                    id_roteirista INT AUTO_INCREMENT PRIMARY KEY,
+                    id_pessoa INT NOT NULL,
+                    FOREIGN KEY (id_pessoa) REFERENCES Dim_Pessoa(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Dim_Estrela (
+                    id_estrela INT AUTO_INCREMENT PRIMARY KEY,
+                    id_pessoa INT NOT NULL,
+                    FOREIGN KEY (id_pessoa) REFERENCES Dim_Pessoa(id_pessoa) ON DELETE CASCADE
+                ) ENGINE=InnoDB;
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS Dim_Genero (
                     id_genero INT AUTO_INCREMENT PRIMARY KEY,
                     nome_genero VARCHAR(100) NOT NULL
                 ) ENGINE=InnoDB;
                 """,
                 """
-                CREATE TABLE IF NOT EXISTS Paises (
+                CREATE TABLE IF NOT EXISTS Dim_Pais (
                     id_pais INT AUTO_INCREMENT PRIMARY KEY,
                     nome_pais VARCHAR(150) NOT NULL
                 ) ENGINE=InnoDB;
                 """,
                 """
-                CREATE TABLE IF NOT EXISTS Empresas (
+                CREATE TABLE IF NOT EXISTS Dim_Empresa (
                     id_empresa INT AUTO_INCREMENT PRIMARY KEY,
                     nome_empresa VARCHAR(255) NOT NULL
                 ) ENGINE=InnoDB;
                 """,
                 """
-                CREATE TABLE IF NOT EXISTS Idiomas (
+                CREATE TABLE IF NOT EXISTS Dim_Idioma (
                     id_idioma INT AUTO_INCREMENT PRIMARY KEY,
                     nome_idioma VARCHAR(150) NOT NULL
                 ) ENGINE=InnoDB;
                 """,
                 # ----------------------------------------------------
-                # 2. NOVA DIMENSÃO TEMPO (Necessária para DW)
-                # O id_tempo será o próprio ano para simplificação aqui
+                # 2. DIMENSÃO TEMPO (Essencial para DW)
+                # O id_tempo será o próprio ano para simplificação
                 # ----------------------------------------------------
                 """
                 CREATE TABLE IF NOT EXISTS Dim_Tempo (
                     id_tempo INT PRIMARY KEY,
                     ano_lancamento INT NOT NULL,
-                    -- Adicione mais atributos de tempo aqui se necessário (ex: trimestre, decada)
+                    -- Adicione mais atributos de tempo se necessário (ex: trimestre, decada)
                     UNIQUE KEY uk_ano_lancamento (ano_lancamento)
                 ) ENGINE=InnoDB;
                 """,
                 # ----------------------------------------------------
-                # 3. DIMENSÃO FILME (Substitui Filmes - guarda DESCRIÇÃO)
+                # 3. DIMENSÃO FILME (Atributos Descritivos)
                 # ----------------------------------------------------
                 """
                 CREATE TABLE IF NOT EXISTS Dim_Filme (
@@ -108,12 +131,20 @@ class FilmesNormalizer:
                 ) ENGINE=InnoDB;
                 """,
                 # ----------------------------------------------------
-                # 4. TABELA FATO (Substitui Filmes - guarda MÉTRICAS e FKs)
+                # 4. TABELA FATO (Centro do Star Schema - Métricas e FKs)
                 # ----------------------------------------------------
                 """
                 CREATE TABLE IF NOT EXISTS Fato_Filme (
-                    id_filme INT PRIMARY KEY,
-                    id_tempo INT, -- FK para Dim_Tempo
+                    id_fato INT AUTO_INCREMENT PRIMARY KEY,
+                    id_filme INT NOT NULL,
+                    id_tempo INT,
+                    id_genero INT,
+                    id_pais INT,
+                    id_empresa INT,
+                    id_idioma INT,
+                    id_diretor INT,
+                    id_roteirista INT,
+                    id_estrela INT,
                     
                     nota_imdb DECIMAL(3,1),
                     votos_imdb INT,
@@ -126,77 +157,17 @@ class FilmesNormalizer:
                     vitorias_oscar INT,
                     
                     FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_tempo) REFERENCES Dim_Tempo(id_tempo)
+                    FOREIGN KEY (id_tempo) REFERENCES Dim_Tempo(id_tempo),
+                    FOREIGN KEY (id_genero) REFERENCES Dim_Genero(id_genero),
+                    FOREIGN KEY (id_pais) REFERENCES Dim_Pais(id_pais),
+                    FOREIGN KEY (id_empresa) REFERENCES Dim_Empresa(id_empresa),
+                    FOREIGN KEY (id_idioma) REFERENCES Dim_Idioma(id_idioma),
+                    FOREIGN KEY (id_diretor) REFERENCES Dim_Diretor(id_diretor),
+                    FOREIGN KEY (id_roteirista) REFERENCES Dim_Roteirista(id_roteirista),
+                    FOREIGN KEY (id_estrela) REFERENCES Dim_Estrela(id_estrela)
                 ) ENGINE=InnoDB;
                 """,
-                # ----------------------------------------------------
-                # 5. TABELAS ASSOCIATIVAS (Bridge Tables) - Mantidas e corrigidas
-                # Agora referenciam Dim_Filme/Fato_Filme
-                # ----------------------------------------------------
-                """
-                CREATE TABLE IF NOT EXISTS filme_estrela (
-                    id_filme INT,
-                    id_pessoa INT,
-                    ordem_credito INT DEFAULT NULL,
-                    PRIMARY KEY (id_filme, id_pessoa),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_diretor (
-                    id_filme INT,
-                    id_pessoa INT,
-                    PRIMARY KEY (id_filme, id_pessoa),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_roteirista (
-                    id_filme INT,
-                    id_pessoa INT,
-                    PRIMARY KEY (id_filme, id_pessoa),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_pessoa) REFERENCES Pessoas(id_pessoa) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_genero (
-                    id_filme INT,
-                    id_genero INT,
-                    PRIMARY KEY (id_filme, id_genero),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_genero) REFERENCES Generos(id_genero) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_pais_origem (
-                    id_filme INT,
-                    id_pais INT,
-                    PRIMARY KEY (id_filme, id_pais),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_pais) REFERENCES Paises(id_pais) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_empresa_producao (
-                    id_filme INT,
-                    id_empresa INT,
-                    PRIMARY KEY (id_filme, id_empresa),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_empresa) REFERENCES Empresas(id_empresa) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS filme_idioma (
-                    id_filme INT,
-                    id_idioma INT,
-                    PRIMARY KEY (id_filme, id_idioma),
-                    FOREIGN KEY (id_filme) REFERENCES Dim_Filme(id_filme) ON DELETE CASCADE,
-                    FOREIGN KEY (id_idioma) REFERENCES Idiomas(id_idioma) ON DELETE CASCADE
-                ) ENGINE=InnoDB;
-                """
+
             ]
             for sql in sqls:
                 self.cursor.execute(sql)
@@ -289,18 +260,99 @@ class FilmesNormalizer:
                 id_tempo = self.inserir_ou_obter_id('Dim_Tempo', 'ano_lancamento', ano_lancamento, 'id_tempo')
             
             # -----------------------------------------------------------------
-            # 3. INSERIR NA FATO_FILME (Métricas e FKs)
+            # 3. OBTER IDS DAS DIMENSÕES (Pegando o primeiro de cada lista)
+            # -----------------------------------------------------------------
+            # Gênero (pega o primeiro da lista)
+            id_genero = None
+            generos = self.processar_lista_valores(row.get('genre',''))
+            if generos:
+                id_genero = self.inserir_ou_obter_id('Dim_Genero', 'nome_genero', generos[0], 'id_genero')
+            
+            # País (pega o primeiro da lista)
+            id_pais = None
+            paises = self.processar_lista_valores(row.get('country_origin',''))
+            if paises:
+                id_pais = self.inserir_ou_obter_id('Dim_Pais', 'nome_pais', paises[0], 'id_pais')
+            
+            # Empresa (pega a primeira da lista)
+            id_empresa = None
+            empresas = self.processar_lista_valores(row.get('production_company',''))
+            if empresas:
+                id_empresa = self.inserir_ou_obter_id('Dim_Empresa', 'nome_empresa', empresas[0], 'id_empresa')
+            
+            # Idioma (pega o primeiro da lista)
+            id_idioma = None
+            idiomas = self.processar_lista_valores(row.get('language',''))
+            if idiomas:
+                id_idioma = self.inserir_ou_obter_id('Dim_Idioma', 'nome_idioma', idiomas[0], 'id_idioma')
+            
+            # Diretor (pega o primeiro da lista)
+            id_diretor = None
+            diretores = self.processar_lista_valores(row.get('director',''))
+            if diretores:
+                id_pessoa_diretor = self.inserir_ou_obter_id('Dim_Pessoa', 'nome_pessoa', diretores[0], 'id_pessoa')
+                if id_pessoa_diretor:
+                    # Verifica se já existe na Dim_Diretor
+                    self.cursor.execute("SELECT id_diretor FROM Dim_Diretor WHERE id_pessoa = %s", (id_pessoa_diretor,))
+                    resultado = self.cursor.fetchone()
+                    if resultado:
+                        id_diretor = resultado[0]
+                    else:
+                        self.cursor.execute("INSERT INTO Dim_Diretor (id_pessoa) VALUES (%s)", (id_pessoa_diretor,))
+                        id_diretor = self.cursor.lastrowid
+            
+            # Roteirista (pega o primeiro da lista)
+            id_roteirista = None
+            roteiristas = self.processar_lista_valores(row.get('writer',''))
+            if roteiristas:
+                id_pessoa_roteirista = self.inserir_ou_obter_id('Dim_Pessoa', 'nome_pessoa', roteiristas[0], 'id_pessoa')
+                if id_pessoa_roteirista:
+                    # Verifica se já existe na Dim_Roteirista
+                    self.cursor.execute("SELECT id_roteirista FROM Dim_Roteirista WHERE id_pessoa = %s", (id_pessoa_roteirista,))
+                    resultado = self.cursor.fetchone()
+                    if resultado:
+                        id_roteirista = resultado[0]
+                    else:
+                        self.cursor.execute("INSERT INTO Dim_Roteirista (id_pessoa) VALUES (%s)", (id_pessoa_roteirista,))
+                        id_roteirista = self.cursor.lastrowid
+            
+            # Estrela (pega a primeira da lista)
+            id_estrela = None
+            estrelas = self.processar_lista_valores(row.get('star',''))
+            if estrelas:
+                id_pessoa_estrela = self.inserir_ou_obter_id('Dim_Pessoa', 'nome_pessoa', estrelas[0], 'id_pessoa')
+                if id_pessoa_estrela:
+                    # Verifica se já existe na Dim_Estrela
+                    self.cursor.execute("SELECT id_estrela FROM Dim_Estrela WHERE id_pessoa = %s", (id_pessoa_estrela,))
+                    resultado = self.cursor.fetchone()
+                    if resultado:
+                        id_estrela = resultado[0]
+                    else:
+                        self.cursor.execute("INSERT INTO Dim_Estrela (id_pessoa) VALUES (%s)", (id_pessoa_estrela,))
+                        id_estrela = self.cursor.lastrowid
+
+            # -----------------------------------------------------------------
+            # 4. INSERIR NA FATO_FILME (Métricas e todas as FKs)
             # -----------------------------------------------------------------
             query_fato_filme = """
                 INSERT INTO Fato_Filme (
-                    id_filme, id_tempo, nota_imdb, votos_imdb, orcamento,
+                    id_filme, id_tempo, id_genero, id_pais, id_empresa, id_idioma,
+                    id_diretor, id_roteirista, id_estrela,
+                    nota_imdb, votos_imdb, orcamento,
                     bilheteria_mundial, bilheteria_eua_canada, bilheteria_abertura,
                     vitorias_premios, nominacoes_premios, vitorias_oscar
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             valores_fato = (
-                id_filme, # FK para Dim_Filme
-                id_tempo, # FK para Dim_Tempo
+                id_filme,
+                id_tempo,
+                id_genero,
+                id_pais,
+                id_empresa,
+                id_idioma,
+                id_diretor,
+                id_roteirista,
+                id_estrela,
                 self.limpar_valor_numerico(row.get('rating_imdb')),
                 self.limpar_valor_numerico(row.get('vote')),
                 self.limpar_valor_numerico(row.get('budget')),
@@ -312,59 +364,7 @@ class FilmesNormalizer:
                 self.limpar_valor_numerico(row.get('oscar'))
             )
             self.cursor.execute(query_fato_filme, valores_fato)
-            
-
-            # -----------------------------------------------------------------
-            # 4. INSERIR NAS TABELAS PONTE (Bridge Tables) - Conectam Fato/Dim_Filme a outras Dimensões
-            # -----------------------------------------------------------------
-            dim_id_map = {
-                'Generos': 'id_genero',
-                'Paises': 'id_pais',
-                'Empresas': 'id_empresa',
-                'Idiomas': 'id_idioma',
-                'Pessoas': 'id_pessoa'
-            }
-
-            def inserir_associativa(tabela_assoc, tabela_dim, campo_nome, coluna_csv):
-                coluna_id = dim_id_map[tabela_dim]
-                for v in self.processar_lista_valores(row.get(coluna_csv,'')):
-                    id_dim = self.inserir_ou_obter_id(tabela_dim, campo_nome, v, coluna_id) 
-                    if id_dim:
-                        self.cursor.execute(
-                            f"INSERT IGNORE INTO {tabela_assoc} (id_filme, {coluna_id}) VALUES (%s,%s)",
-                            (id_filme, id_dim)
-                        )
-
-            # Associativas de Pessoas (Bridge Tables)
-            for i, estrela in enumerate(self.processar_lista_valores(row.get('star',''))):
-                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', estrela, 'id_pessoa')
-                if id_pessoa:
-                    self.cursor.execute(
-                        "INSERT IGNORE INTO filme_estrela (id_filme,id_pessoa,ordem_credito) VALUES (%s,%s,%s)",
-                        (id_filme,id_pessoa,i+1)
-                    )
-
-            for diretor in self.processar_lista_valores(row.get('director','')):
-                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', diretor, 'id_pessoa')
-                if id_pessoa:
-                    self.cursor.execute(
-                        "INSERT IGNORE INTO filme_diretor (id_filme,id_pessoa) VALUES (%s,%s)",
-                        (id_filme,id_pessoa)
-                    )
-
-            for roteirista in self.processar_lista_valores(row.get('writer','')):
-                id_pessoa = self.inserir_ou_obter_id('Pessoas','nome_pessoa', roteirista, 'id_pessoa')
-                if id_pessoa:
-                    self.cursor.execute(
-                        "INSERT IGNORE INTO filme_roteirista (id_filme,id_pessoa) VALUES (%s,%s)",
-                        (id_filme,id_pessoa)
-                    )
-
-            # Associativas Gerais (Bridge Tables)
-            inserir_associativa('filme_genero','Generos','nome_genero','genre')
-            inserir_associativa('filme_pais_origem','Paises','nome_pais','country_origin')
-            inserir_associativa('filme_empresa_producao','Empresas','nome_empresa','production_company')
-            inserir_associativa('filme_idioma','Idiomas','nome_idioma','language')
+            id_fato = self.cursor.lastrowid
 
             self.connection.commit() # commit por filme
             return True
@@ -416,17 +416,15 @@ if __name__ == "__main__":
     arquivo_csv = "filmes_ingles_apos_2000.csv"
     
     # 1. Definir o nome do banco para o Data Warehouse
-    DB_NAME = 'filmes_dw' 
+    DB_NAME = 'filmes' 
     
     # 2. Definir o limite
     LIMITE_PROCESSAMENTO = 500 # Use None para processar todos
     
-    normalizer = FilmesNormalizer(user='root', password='root123', database=DB_NAME)
+    normalizer = FilmesNormalizer(user='user', password='user123', database=DB_NAME)
     
     if normalizer.conectar_banco(criar_db=True):
-        
-        # NOTE: VOCÊ DEVE EXCLUIR O BANCO 'filmes_dw' ANTES DE RODAR
-        # PARA QUE AS NOVAS TABELAS SEJAM CRIADAS CORRETAMENTE.
+        # O banco será recriado automaticamente (DROP + CREATE)
         normalizer.criar_tabelas() 
         
         normalizer.normalizar_csv(arquivo_csv, limite=LIMITE_PROCESSAMENTO)
