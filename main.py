@@ -4,7 +4,7 @@ import re
 import os
 
 class FilmesNormalizer:
-    def __init__(self, host='localhost', user='root', password='', database='filmes'):
+    def __init__(self, host='127.0.0.1', user='root', password='Khadidja', database='filmes_base'):
         self.host = host
         self.user = user
         self.password = password
@@ -22,9 +22,9 @@ class FilmesNormalizer:
             self.connection = pymysql.connect(
                 host=self.host,
                 user=self.user,
-                password=self.password,
+                password='Khadidja',
                 charset='utf8mb4',
-                port=33016,
+                port=3306,
                 autocommit=False
             )
             self.cursor = self.connection.cursor()
